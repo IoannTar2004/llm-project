@@ -20,7 +20,6 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     связь с отброшенным концом. Пригодятся `find_codes` и `canonical_name` из `assistant.infra.grounding`.
     Функция не падает ни на каком ответе модели: одна повторная попытка, затем пустой результат.
     """
-    # TODO: запрос к модели, разбор JSON, проверки по тексту чанка и словарю
 
     system_prompt = """
     Роль: Ты извлекаешь сущности и связи из текста сервисного бюллетеня.
