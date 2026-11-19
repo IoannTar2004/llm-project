@@ -58,6 +58,7 @@ def test_valid_answer_becomes_canonical_entities_and_relations():
     llm = FakeLLM([GOOD])
     result = extract_chunk(BULLETIN, llm)
     assert (result.chunk_id, result.doc_id) == (BULLETIN.chunk_id, BULLETIN.doc_id)
+    print(result.dropped)
     assert {e.node_id for e in result.entities} >= {
         "Part:P-1042",
         "Part:P-1042B",
