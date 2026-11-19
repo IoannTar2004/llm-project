@@ -8,6 +8,8 @@ from assistant.infra.llm import LLMClient
 from assistant.infra.schemas import Chunk, ExtractionResult, EXTRACTION_SCHEMA, ENTITY_TYPES, RELATION_SIGNATURES, \
     Entity, Relation
 
+code_types = ("Part", "Model", "ErrorCode", "Procedure")
+named_types = ("Component", "Supplier", "ProductLine")
 
 def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     """Возвращает сущности и связи чанка строго по схеме графа.
@@ -71,66 +73,60 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
 
     dropped = 0
     _vocabulary = vocabulary()
-    parts = find_codes(chunk.text)
+    all_codes = find_codes(chunk.text)
 
+    # обработка сущностей
     for entity in content["entities"]:
-        type = entity["type"]
-        if type not in ENTITY_TYPES:
+        entity_type = entity["type"]
+
+        # приведение названий деталей к каноническому виду
+        entity["name"] = canonicalize(entity["type"], entity["name"], _vocabulary)
+        if not entity["name"] or entity_type in code_types and entity["name"] not in all_codes:
             entity["dropped"] = True
             dropped += 1
             continue
 
-        # приведение названий деталей к каноническому виду
-        name = entity["name"]
-        if type == "Part":
-            name = normalize_code(name)
-            if name not in parts:
-                dropped += 1
-                entity["dropped"] = True
-                continue
-            entity["name"] = name
+    entities = [Entity(e["type"], e["name"]) for e in content["entities"] if "dropped" not in e]
 
-        # Проверка того, что компонент/поставщик/продуктовая линия есть в vocabulary.json
-        elif type in ["Component", "Supplier", "ProductLine"]:
-            name = canonical_name(type, name, _vocabulary)
-            if not name:
-                dropped += 1
-                entity["dropped"] = True
-
+    # обработка связей
+    relations = []
     for relation in content["relations"]:
         type = relation["type"]
+        object_type = relation["object_type"]
+        subject_type = relation["subject_type"]
+
         if type not in RELATION_SIGNATURES:
             dropped += 1
             relation["dropped"] = True
             continue
 
-        signature = (relation["subject_type"], relation["object_type"])
-        if signature != RELATION_SIGNATURES[type]:
+        if (subject_type, object_type) != RELATION_SIGNATURES[type]:
             dropped += 1
             relation["dropped"] = True
             continue
 
-        # приведение названий деталей к каноническому виду
-        name = relation["object"]
-        if relation["object_type"] == "Part":
-            name = normalize_code(name)
-            if name not in parts:
-                dropped += 1
-                relation["dropped"] = True
-                continue
-            relation["object"] = name
+        ok = True
+        for side in ("subject", "object"):
+            relation[side] = canonicalize(relation[f"{side}_type"], relation[side], _vocabulary)
+            if not relation[side]:
+                ok = False
+                break
+        if not ok:
+            dropped += 1
+            relation["dropped"] = True
+            continue
 
-        name = relation["subject"]
-        if relation["subject_type"] == "Part":
-            name = normalize_code(name)
-            if name not in parts:
-                dropped += 1
-                relation["dropped"] = True
-                continue
-            relation["subject"] = name
+        subject = relation["subject"]
+        object = relation["object"]
+        if subject_type in code_types and subject not in all_codes:
+            dropped += 1
+            continue
 
-    entities = [Entity(e["type"], e["name"]) for e in content["entities"] if "dropped" not in e]
-    relations = [Relation(r["subject"], r["type"], r["object"]) for r in content["relations"] if "dropped" not in r]
+        if object_type in code_types and object not in all_codes:
+            dropped += 1
+            continue
+
+        relations.append(Relation(Entity(subject_type, subject), type, Entity(object_type, object)))
 
     return ExtractionResult(chunk.chunk_id, chunk.doc_id, entities, relations, dropped)
 
@@ -141,24 +137,34 @@ def get_extracted_json(llm_response: str) -> Any:
     except json.decoder.JSONDecodeError as e:
         return {}
 
-    if not assert_fields("json_response", json_response, ["entities", "relations"]):
+    if not assert_fields(json_response, ["entities", "relations"]):
         return {}
 
     entities = json_response["entities"]
     relations = json_response["relations"]
 
     for i, e in enumerate(entities):
-        if not assert_fields(f"entities[{i}]", e, ["name", "type"]):
+        if not assert_fields(e, ["name", "type"]):
             return {}
     for i, r in enumerate(relations):
-        if not assert_fields(f"relations[{i}]", r, ["subject", "object", "subject_type", "object_type", "type"]):
+        if not assert_fields(r, ["subject", "object", "subject_type", "object_type", "type"]):
             return {}
 
     return json_response
 
-def assert_fields(name:str, json_response: dict, fields: list) -> bool:
+def assert_fields(json_response: dict, fields: list) -> bool:
     for field in fields:
         if field not in json_response:
             return False
 
     return True
+
+
+def canonicalize(stype: str, sname: str, vocabulary: dict) -> str:
+    if stype in code_types:
+        return normalize_code(sname)
+    if stype in named_types:
+        canonical = canonical_name(stype, sname, vocabulary)
+        return canonical
+
+    return ""
