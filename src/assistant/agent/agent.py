@@ -88,4 +88,126 @@ def run_agent(
                                                         f'не упоминается ни в вопросе, ни в результатах вызовов инструментов'
                                                     })
                         continue
-    raise NotImplementedError
+
+                func = tools[tool_call.name]
+                if tool_call.name == "create_service_order" and not confirm:
+                    return AgentResult("Жду подтверждения.", tool_steps, get_all_sources(tool_steps), False, True,
+                                       {"tool": "create_service_order", "args": {tool_call.arguments}})
+
+                for _ in range(3):
+                    try:
+                        result = func(**tool_call.arguments)
+                        break
+                    except ErpUnavailable:
+                        pass
+                else:
+                    result = {"error": "Данные ERP получить не удалось."}
+
+            else:
+                result = calls[key]
+
+            if "error" in result:
+                tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, None, result["error"]))
+            else:
+                tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, result))
+
+            add_message_with_tool(messages, tool_call, result)
+            calls[(tool_call.name, frozenset(tool_call.arguments))] = result
+
+    return AgentResult("Работа прервана. Достигнут лимит шагов.", tool_steps, get_all_sources(tool_steps))
+
+
+def add_message_with_tool(messages: list[dict], tool_call: ToolCall, message: dict) -> None:
+    messages.append({
+        "role": "assistant",
+        "content": None,
+        "tool_calls": [tool_call],
+    })
+
+    messages.append({
+        "role": "tool",
+        "tool_call_id": tool_call.id,
+        "content": message
+    })
+
+
+def is_valid_function(tools: dict[str, Callable[..., dict]], tool_call: ToolCall) -> str | None:
+    if tool_call.name not in tools:
+        return f"Отсутствует инструмент {tool_call.name}."
+
+    if "_raw" in tool_call.arguments:
+        return "Аргументы не являются валидным JSON"
+
+    schema = next(s["function"] for s in TOOL_SCHEMAS if s["function"]["name"] == tool_call.name)
+    for arg in tool_call.arguments:
+        if arg not in schema["parameters"]["properties"]:
+            return f"Неизвестный аргумент функции {tool_call.name} - {arg}."
+
+    return None
+
+
+def code_is_mentioned(code: str, question: str, tool_steps: list[ToolStep]) -> bool:
+    target = normalize_code(code)
+
+    if target in find_codes(question):
+        return True
+
+    for tool_step in tool_steps:
+        result = tool_step.result
+        if target in find_codes(result.get("answer", "")):
+            return True
+
+        for fact in result.get("facts", []):
+            if target in fact:
+                return True
+
+    return False
+
+
+def qty_or_price_is_mentioned(target: int, question: str) -> str | None:
+    cleaned = re.sub(_CODE, "", question)
+    numbers = {int(n) for n in re.findall(r"\b\d+\b", cleaned)}
+    if len(numbers) == 0:
+        return "Отсутствует информация, сколько штук заказать. Спроси пользователя об этом."
+    if len(numbers) > 1:
+        return "В вопросе обнаружена двусмысленность: непонятно, сколько требуется заказать. Спроси про точное количество."
+    if numbers != {target}:
+        return f"Неверный аргумент qty: пользователь запросил {target}, а ты указал qty={numbers.pop()}."
+
+    return None
+
+
+def get_all_sources(tool_steps: list[ToolStep]) -> list[str]:
+    sources = []
+    for tool_step in tool_steps:
+        if tool_step.result and "sources" in tool_step.result:
+            sources.extend(tool_step.result["sources"])
+
+    return list(dict.fromkeys(sources))
+
+
+def extract_codes_and_numbers(raw: str) -> set:
+    codes = find_codes(raw)
+    cleaned = re.sub(_CODE, "", raw)
+    numbers = re.findall(numbers_pattern, cleaned)
+    return set(codes) | set(numbers)
+
+
+def verify_answer(answer: str, question: str, tool_steps: list[ToolStep]) -> bool:
+    all_mentions = extract_codes_and_numbers(question)
+
+    for tool_step in tool_steps:
+        if tool_step.result:
+            all_mentions.update(extract_codes_and_numbers(tool_step.result.get("answer", "")))
+
+            facts_text = " ".join(tool_step.result.get("facts", []))
+            all_mentions.update(extract_codes_and_numbers(facts_text))
+
+            if "price_rub" in tool_step.result:
+                all_mentions.add(str(tool_step.result["price_rub"]))
+            if "qty" in tool_step.result:
+                all_mentions.add(str(tool_step.result["qty"]))
+
+    llm_mentions = extract_codes_and_numbers(answer)
+
+    return llm_mentions.issubset(all_mentions)
