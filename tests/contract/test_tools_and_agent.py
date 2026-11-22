@@ -4,6 +4,7 @@ import pytest
 
 from assistant.agent.agent import run_agent
 from assistant.agent.tools import TOOL_SCHEMAS, build_tools
+from assistant.infra.config import make_llm, Settings
 from assistant.infra.erp_client import ErpUnavailable
 from assistant.infra.llm import LLMResponse, ToolCall
 from assistant.infra.testing import FakeLLM
@@ -49,6 +50,11 @@ class Tools:
 
     def count(self, name: str) -> int:
         return sum(1 for called, _ in self.calls if called == name)
+
+
+def test_my():
+    llm = make_llm(Settings.from_env())
+    run_agent("Сколько стоит пусковое реле для AR-210?", llm, {}, max_steps=1)
 
 
 def test_tool_schemas_describe_the_five_tools():

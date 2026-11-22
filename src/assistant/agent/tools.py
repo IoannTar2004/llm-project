@@ -142,17 +142,28 @@ def build_tools(kb: KnowledgeBase, llm: LLMClient, erp: ErpClient) -> dict[str, 
     `ErpNotFound` и `ErpRejected` превращаются в {"error": "..."} с разным текстом, чтобы исходы
     оставались различимыми. `ErpUnavailable` передаётся дальше: повторы делает агент (FR-8).
     """
-    def search_knowledge(question: str) -> Any:
+    def search_knowledge(question: str) -> dict[str, Any]:
         if not question:
             return {"error": "Пустой вопрос"}
 
-        return search.local_search(question, kb, llm)
+        search_result = search.global_search(question, kb, llm)
+        return {
+            "answer": search_result.text,
+            "facts": search_result.facts,
+            "sources": search_result.sources,
+            "refused": search_result.refused
+        }
 
-    def summarize_topic(question: str) -> Any:
+    def summarize_topic(question: str) -> dict[str, Any]:
         if not question:
             return {"error": "Пустой вопрос"}
 
-        return search.global_search(question, kb, llm)
+        search_result = search.global_search(question, kb, llm)
+        return {
+            "answer": search_result.text,
+            "sources": search_result.sources,
+            "refused": search_result.refused
+        }
 
     def check_stock(part_id: str, warehouse: str) -> Any:
         if not re.match(r"P-\d{4}[A-Z]?", part_id):
