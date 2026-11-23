@@ -5,7 +5,7 @@ import re
 from collections.abc import Callable
 from assistant.agent.tools import TOOL_SCHEMAS
 from assistant.infra.erp_client import ErpUnavailable
-from assistant.infra.grounding import normalize_code, find_codes, _CODE
+from assistant.infra.grounding import find_codes, _CODE
 from assistant.infra.llm import LLMClient, ToolCall
 from assistant.infra.schemas import AgentResult, ToolStep
 
@@ -59,8 +59,10 @@ def run_agent(
                     messages.append({
                         "role": "user",
                         "content":  (
-                            "Твой ответ содержит неподтверждённые данные."
-                            "Исправь его, используя только вопрос и результаты инструментов."
+                            "В твоём ответе есть неподтверждённые коды, числа, цены или количества. "
+                            "Пересмотри ответ, используя только данные из вопроса и результатов инструментов. "
+                            "Удали все неподтверждённые сведения. Если ответить достоверно невозможно, "
+                            "сообщи, что в базе знаний не найдено."
                         )
                     })
                     retries += 1
@@ -72,27 +74,37 @@ def run_agent(
                 return AgentResult(llm_response.content, tool_steps, get_all_sources(tool_steps))
 
         for tool_call in llm_response.tool_calls:
-            key = (tool_call.name, frozenset(tool_call.arguments))
+            key = (tool_call.name, frozenset(tool_call.arguments.items()))
 
             if key not in calls:
                 error = is_valid_function(tools, tool_call)
                 if error is not None:
                     add_message_with_tool(messages, tool_call, {"error": error})
+                    tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, None, error))
+
                     continue
 
                 if tool_call.name in ("get_price", "create_service_order"):
                     if not verify_answer(tool_call.arguments["part_id"], question, tool_steps):
-                        add_message_with_tool(messages, tool_call,
-                                          {"error":
-                                                        f'Деталь {tool_call.arguments["part_id"]} '
-                                                        f'не упоминается ни в вопросе, ни в результатах вызовов инструментов'
-                                                    })
+                        error = (f'Деталь {tool_call.arguments["part_id"]} '
+                                 f'не упоминается ни в вопросе, ни в результатах вызовов инструментов')
+                        add_message_with_tool(messages, tool_call,{"error": error})
+                        tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, None, error))
+
+                        continue
+
+                if tool_call.name == "create_service_order":
+                    if not verify_answer(str(tool_call.arguments["qty"]), question, tool_steps):
+                        error = "Неизвестно количество деталей, которое требуется заказать"
+                        add_message_with_tool(messages, tool_call, {"error": error})
+                        tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, None, error))
+
                         continue
 
                 func = tools[tool_call.name]
                 if tool_call.name == "create_service_order" and not confirm:
                     return AgentResult("Жду подтверждения.", tool_steps, get_all_sources(tool_steps), False, True,
-                                       {"tool": "create_service_order", "args": {tool_call.arguments}})
+                                       {"tool": "create_service_order", "args": tool_call.arguments})
 
                 for _ in range(3):
                     try:
@@ -111,8 +123,16 @@ def run_agent(
             else:
                 tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, result))
 
+            if result.get("refused"):
+                return AgentResult(
+                    "В базе знаний не найдено.",
+                    tool_steps,
+                    get_all_sources(tool_steps),
+                    True
+                )
+
             add_message_with_tool(messages, tool_call, result)
-            calls[(tool_call.name, frozenset(tool_call.arguments))] = result
+            calls[key] = result
 
     return AgentResult("Работа прервана. Достигнут лимит шагов.", tool_steps, get_all_sources(tool_steps))
 
@@ -146,24 +166,6 @@ def is_valid_function(tools: dict[str, Callable[..., dict]], tool_call: ToolCall
     return None
 
 
-def code_is_mentioned(code: str, question: str, tool_steps: list[ToolStep]) -> bool:
-    target = normalize_code(code)
-
-    if target in find_codes(question):
-        return True
-
-    for tool_step in tool_steps:
-        result = tool_step.result
-        if target in find_codes(result.get("answer", "")):
-            return True
-
-        for fact in result.get("facts", []):
-            if target in fact:
-                return True
-
-    return False
-
-
 def qty_or_price_is_mentioned(target: int, question: str) -> str | None:
     cleaned = re.sub(_CODE, "", question)
     numbers = {int(n) for n in re.findall(r"\b\d+\b", cleaned)}
@@ -189,6 +191,7 @@ def get_all_sources(tool_steps: list[ToolStep]) -> list[str]:
 def extract_codes_and_numbers(raw: str) -> set:
     codes = find_codes(raw)
     cleaned = re.sub(_CODE, "", raw)
+    cleaned = re.sub(r"SO-\d+", "", cleaned)
     numbers = re.findall(numbers_pattern, cleaned)
     return set(codes) | set(numbers)
 
