@@ -4,7 +4,7 @@ import pytest
 
 from assistant.agent.agent import run_agent
 from assistant.agent.tools import TOOL_SCHEMAS, build_tools
-from assistant.infra.config import make_llm, Settings
+from assistant.infra.config import Settings, make_llm
 from assistant.infra.erp_client import ErpUnavailable
 from assistant.infra.llm import LLMResponse, ToolCall
 from assistant.infra.testing import FakeLLM

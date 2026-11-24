@@ -1,13 +1,12 @@
 """Цикл агента. Требования FR-7, FR-8, FR-9 и FR-10."""
 import re
-
 from collections.abc import Callable
+
 from assistant.agent.tools import TOOL_SCHEMAS
 from assistant.infra.erp_client import ErpUnavailable
-from assistant.infra.grounding import find_codes, _CODE
+from assistant.infra.grounding import _CODE, find_codes
 from assistant.infra.llm import LLMClient, ToolCall
 from assistant.infra.schemas import AgentResult, ToolStep
-
 
 numbers_pattern = r"\b\d+\b"
 
@@ -70,8 +69,8 @@ def run_agent(
                     continue
 
                 else:
-                    # Если после повторной генерации верификация ответа не прошла, то возвращаем ответ, что в базе знаний
-                    # не найдено (FR-10).
+                    # Если после повторной генерации верификация ответа не прошла, то возвращаем ответ, что в базе
+                    #  знаний не найдено (FR-10).
                     return AgentResult("В базе знаний не найдено.", tool_steps, get_all_sources(tool_steps), True)
             else:
                 return AgentResult(llm_response.content, tool_steps, get_all_sources(tool_steps))
@@ -107,7 +106,8 @@ def run_agent(
 
                 func = tools[tool_call.name]
 
-                # Если confirm - False, возвращаем ответ, требующий подтверждения создания заказа от пользователя (FR-9).
+                # Если confirm - False, возвращаем ответ, требующий подтверждения создания заказа от пользователя
+                # (FR-9).
                 if tool_call.name == "create_service_order" and not confirm:
                     return AgentResult("Жду подтверждения.", tool_steps, get_all_sources(tool_steps), False, True,
                                        {"tool": "create_service_order", "args": tool_call.arguments})

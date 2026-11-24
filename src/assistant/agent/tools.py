@@ -146,7 +146,7 @@ def build_tools(kb: KnowledgeBase, llm: LLMClient, erp: ErpClient) -> dict[str, 
         if not question:
             return {"error": "Пустой вопрос"}
 
-        search_result = search.global_search(question, kb, llm)
+        search_result = search.local_search(question, kb, llm)
         return {
             "answer": search_result.text,
             "facts": search_result.facts,

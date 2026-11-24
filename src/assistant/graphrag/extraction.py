@@ -3,10 +3,16 @@ import json
 from typing import Any
 
 from assistant.infra.config import vocabulary
-from assistant.infra.grounding import normalize_code, find_codes, canonical_name
+from assistant.infra.grounding import canonical_name, find_codes, normalize_code
 from assistant.infra.llm import LLMClient
-from assistant.infra.schemas import Chunk, ExtractionResult, EXTRACTION_SCHEMA, ENTITY_TYPES, RELATION_SIGNATURES, \
-    Entity, Relation
+from assistant.infra.schemas import (
+    EXTRACTION_SCHEMA,
+    RELATION_SIGNATURES,
+    Chunk,
+    Entity,
+    ExtractionResult,
+    Relation,
+)
 
 code_types = ("Part", "Model", "ErrorCode", "Procedure")
 named_types = ("Component", "Supplier", "ProductLine")
@@ -62,7 +68,8 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
         {"role": "user", "content": chunk.text}
     ]
 
-    for attempt in range(2):
+    # Делаем две попытки на генерацию валидного json
+    for _ in range(2):
         llm_response = llm.chat(messages, json_schema=EXTRACTION_SCHEMA)
         content = get_extracted_json(llm_response.content)
         if content != {}:
@@ -104,6 +111,7 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
             relation["dropped"] = True
             continue
 
+        # приведение связей к каноническому виду
         ok = True
         for side in ("subject", "object"):
             relation[side] = canonicalize(relation[f"{side}_type"], relation[side], _vocabulary)
@@ -115,6 +123,7 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
             relation["dropped"] = True
             continue
 
+        # Проверяем, что все сущности в связях есть в тексте чанка
         subject = relation["subject"]
         object = relation["object"]
         if subject_type in code_types and subject not in all_codes:
@@ -131,9 +140,12 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
 
 
 def get_extracted_json(llm_response: str) -> Any:
+    """
+    Валидирует сгенерированный моделью json согласно схеме.
+    """
     try:
         json_response = json.loads(llm_response)
-    except json.decoder.JSONDecodeError as e:
+    except json.decoder.JSONDecodeError:
         return {}
 
     if not assert_fields(json_response, ["entities", "relations"]):
@@ -142,10 +154,10 @@ def get_extracted_json(llm_response: str) -> Any:
     entities = json_response["entities"]
     relations = json_response["relations"]
 
-    for i, e in enumerate(entities):
+    for e in entities:
         if not assert_fields(e, ["name", "type"]):
             return {}
-    for i, r in enumerate(relations):
+    for r in relations:
         if not assert_fields(r, ["subject", "object", "subject_type", "object_type", "type"]):
             return {}
 
@@ -160,6 +172,9 @@ def assert_fields(json_response: dict, fields: list) -> bool:
 
 
 def canonicalize(stype: str, sname: str, vocabulary: dict) -> str:
+    """
+    Приведение кода/названия к каноническому виду
+    """
     if stype in code_types:
         return normalize_code(sname)
     if stype in named_types:
