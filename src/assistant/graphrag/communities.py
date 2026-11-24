@@ -1,10 +1,13 @@
 """Сообщества графа и их сводки. Требование FR-3."""
 
+from collections import Counter
+
 import networkx as nx
 
 from assistant.infra.llm import LLMClient
 from assistant.infra.schemas import Community
 
+LOUVAIN_SEED = 7
 
 def detect_communities(graph: nx.DiGraph) -> list[Community]:
     """Разбивает узлы на сообщества алгоритмом Лувена с фиксированным `seed`.
