@@ -1,4 +1,5 @@
 """Цикл агента. Требования FR-7, FR-8, FR-9 и FR-10."""
+import json
 import re
 from collections.abc import Callable
 
@@ -148,16 +149,27 @@ def run_agent(
 
 
 def add_message_with_tool(messages: list[dict], tool_call: ToolCall, message: dict) -> None:
+    # Превращаем объект ToolCall в словарь для JSON
+    tool_call_dict = {
+        "id": tool_call.id,
+        "type": "function",
+        "function": {
+            "name": tool_call.name,
+            # Аргументы должны быть строкой JSON!
+            "arguments": json.dumps(tool_call.arguments, ensure_ascii=False)
+        }
+    }
+
     messages.append({
         "role": "assistant",
         "content": None,
-        "tool_calls": [tool_call],
+        "tool_calls": [tool_call_dict],
     })
 
     messages.append({
         "role": "tool",
         "tool_call_id": tool_call.id,
-        "content": message
+        "content": json.dumps(message, ensure_ascii=False)
     })
 
 
