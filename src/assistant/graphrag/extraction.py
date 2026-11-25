@@ -42,23 +42,43 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     Список допустимых типов связей с направлением:
     1. BELONGS_TO (Model → ProductLine) - модель входит в линейку.
     2. HAS_PART (Model → Part) - в модели установлена деталь.
-    3. IS_A (Part → Node) - деталь является узлом этого вида.
-    4. INDICATES (ErrorCode → Node) - ошибка указывает на отказ узла.
-    5. FIXED_BY (ErrorCode -> Procedure) - ошибка устраняется по регламенту.
+    3. IS_A (Part → Component) - деталь является узлом этого вида.
+    4. INDICATES (ErrorCode → Component) - ошибка указывает на отказ узла.
+    5. FIXED_BY (ErrorCode → Procedure) - ошибка устраняется по регламенту.
     6. REPLACED_BY (Part → Part) - деталь снята с производства и заменена. Важно: REPLACED_BY идёт от старой детали 
     к новой, а не наоборот.
     7. SUPPLIED_BY (Part → Supplier) - деталь поставляет поставщик.
     8. FAILED (Model → Component) - в отчёте о ремонте зафиксирован отказ узла.
     
-    Важно: Связь должна быть такой Subject → Object.
+    Важно: 
+    Связь должна быть такой (Subject → Object). Например, в связи (Model → Component) subject_type: model, object_type: 
+    component. Аналогично с другими связями. Код ошибки означает одно и то же во всех моделях. В каждой модели на один 
+    вид узла приходится одна деталь. Замены бывают в два шага: P-2054 -> P-2054B -> P-2054C. Если после кода детали в 
+    скобках указан узел (например, P-2054 (нагреватель оттайки)), ты обязан извлечь этот узел как сущность Component 
+    и создать связь IS_A от детали к этому узлу. Извлекай коды/названия, которые указаны в запросе: ничего не
+    выдумывай!
     
-    Код ошибки означает одно и то же во всех моделях. В каждой модели на один вид узла приходится одна деталь. 
-    Замены бывают в два шага: P-2054 -> P-2054B -> P-2054C.
+    1. Пример для REPLACED_BY:
+    Текст: Деталь P-2054 (нагреватель оттайки) снята с производства. Вместо неё устанавливается деталь P-2054B. 
+    Поставщик детали P-2054B – «ТермоПрибор». Детали взаимозаменяемы по посадочным местам и разъёмам, доработка 
+    оборудования не требуется. Новые заказы оформляются только на P-2054B.
     
-    Пример для REPLACED_BY:
-    Текст: «Деталь P-1 снята с производства, вместо неё устанавливается P-2.»
     Правильный ответ:
-    {"subject": "P-1", "subject_type": "Part", "type": "REPLACED_BY", "object": "P-2", "object_type": "Part"}
+    {'entities': [{'name': 'нагреватель оттайки', 'type': 'Component'}, {'name': 'P-2054', 'type': 'Part'}, 
+    {'name': 'P-2054B', 'type': 'Part'}, {'name': 'ТермоПрибор', 'type': 'Supplier'}], 
+    'relations': [{'object': 'нагреватель оттайки', 'object_type': 'Component', 'subject': 'P-2054', 
+    'subject_type': 'Part', 'type': 'IS_A'}, {'object': 'P-2054B', 'object_type': 'Part', 'subject': 'P-2054', 
+    'subject_type': 'Part', 'type': 'REPLACED_BY'}, {'object': 'ТермоПрибор', 'object_type': 'Supplier', 'subject': 
+    'P-2054B', 'subject_type': 'Part', 'type': 'SUPPLIED_BY'}]}
+    
+    2. Пример для INDICATES и FIXED_BY:
+    Текст: При ошибке E-11 отказал компрессор, ремонт по регламенту SP-101.
+    
+    Правильный ответ:
+    {"entities": [{"name": "E-11", "type": "ErrorCode"}, {"name": "компрессор", "type": "Component"}, {"name": "SP-101", 
+    "type": "Procedure"}], "relations": [{"subject": "E-11", "subject_type": "ErrorCode", "type": "INDICATES", "object":
+    "компрессор", "object_type": "Component"}, {"subject": "E-11", "subject_type": "ErrorCode", "type": "FIXED_BY", 
+    "object": "SP-101", "object_type": "Procedure"}]}
     
     Требование: «Возвращай только JSON по схеме, без пояснений».
     """
@@ -80,14 +100,13 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     dropped = 0
     _vocabulary = vocabulary()
     all_codes = find_codes(chunk.text)
-
     # обработка сущностей
     for entity in content["entities"]:
         entity_type = entity["type"]
 
         # приведение названий деталей к каноническому виду
         entity["name"] = canonicalize(entity["type"], entity["name"], _vocabulary)
-        if not entity["name"] or entity_type in code_types and entity["name"] not in all_codes:
+        if entity["name"] is None or entity_type in code_types and entity["name"] not in all_codes:
             entity["dropped"] = True
             dropped += 1
             continue
@@ -171,7 +190,7 @@ def assert_fields(json_response: dict, fields: list) -> bool:
     return True
 
 
-def canonicalize(stype: str, sname: str, vocabulary: dict) -> str:
+def canonicalize(stype: str, sname: str, vocabulary: dict) -> str | None:
     """
     Приведение кода/названия к каноническому виду
     """
@@ -181,4 +200,4 @@ def canonicalize(stype: str, sname: str, vocabulary: dict) -> str:
         canonical = canonical_name(stype, sname, vocabulary)
         return canonical
 
-    return ""
+    return None
