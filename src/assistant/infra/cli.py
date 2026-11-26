@@ -5,6 +5,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from tqdm import tqdm
 
 from assistant.infra import indexing
 from assistant.infra.chunking import load_chunks
@@ -118,7 +119,7 @@ def cmd_eval_extraction(args, context: Context) -> None:
     settings = context.settings
     gold = json.loads((settings.data_dir / "gold_dev.json").read_text(encoding="utf-8"))
     chunks = [chunk for chunk in load_chunks(settings.data_dir / "corpus") if chunk.doc_id in gold]
-    report = evaluate_extraction(gold, [extraction.extract_chunk(chunk, context.llm) for chunk in chunks])
+    report = evaluate_extraction(gold, [extraction.extract_chunk(chunk, context.llm) for chunk in tqdm(chunks)])
     _dump(settings.artifacts_dir / "eval_extraction.json", report)
     print(
         f"извлечение: связи Precision {report['relations']['precision']:.2f}, "

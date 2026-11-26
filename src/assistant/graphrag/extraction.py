@@ -51,8 +51,19 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     8. FAILED (Model → Component) - в отчёте о ремонте зафиксирован отказ узла.
     
     Важно: 
-    Связь должна быть такой (Subject → Object). Например, в связи (Model → Component) subject_type: model, object_type: 
-    component. Аналогично с другими связями. Код ошибки означает одно и то же во всех моделях. В каждой модели на один 
+    Связь должна быть такой (Subject → Object).
+    Правила направления связей:
+    Направление связи строго определяется её типом. Порядок упоминания сущностей в тексте не определяет направление связи.
+    Например:
+    «Поставщик Х поставляет деталь P-1042» → P-1042 SUPPLIED_BY Х.
+    «Линейка Бриз включает модель BZ-220» → BZ-220 BELONGS_TO Бриз.
+    «Деталь P-1042 установлена в модели AR-210» → AR-210 HAS_PART P-1042.
+    «Узел пусковое реле установлен в модели AR-210 (деталь P-1042)» → P-1042 IS_A пусковое реле; AR-210 HAS_PART P-1042.
+    
+    Аналогично с другими связями.
+    Перед выдачей JSON проверяй направление каждой связи по её допустимой схеме.
+    
+    Код ошибки означает одно и то же во всех моделях. В каждой модели на один 
     вид узла приходится одна деталь. Замены бывают в два шага: P-2054 -> P-2054B -> P-2054C. Если после кода детали в 
     скобках указан узел (например, P-2054 (нагреватель оттайки)), ты обязан извлечь этот узел как сущность Component 
     и создать связь IS_A от детали к этому узлу. Извлекай коды/названия, которые указаны в запросе: ничего не
@@ -80,7 +91,34 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     "компрессор", "object_type": "Component"}, {"subject": "E-11", "subject_type": "ErrorCode", "type": "FIXED_BY", 
     "object": "SP-101", "object_type": "Procedure"}]}
     
-    Требование: «Возвращай только JSON по схеме, без пояснений».
+    3. Пример для HAS_PART, IS_A и SUPPLIED_BY (из списка узлов):
+    Текст: В AR-210 установлены следующие узлы. пусковое реле – деталь P-1042, поставщик «ХолодКомплект».
+    
+    Правильный ответ:
+    {"entities": [{"name": "AR-210", "type": "Model"}, {"name": "пусковое реле", "type": "Component"}, 
+    {"name": "P-1042", "type": "Part"}, {"name": "ХолодКомплект", "type": "Supplier"}], "relations": [
+    {"subject": "AR-210", "subject_type": "Model", "type": "HAS_PART", "object": "P-1042", "object_type": "Part"}, 
+    {"subject": "P-1042", "subject_type": "Part", "type": "IS_A", "object": "пусковое реле", 
+    "object_type": "Component"}, {"subject": "P-1042", "subject_type": "Part", "type": "SUPPLIED_BY", 
+    "object": "ХолодКомплект", "object_type": "Supplier"}]}
+    
+    4. Пример для BELONGS_TO (из руководства):
+    Текст: Моноблок BZ-220 входит в линейку «Бриз» компании «ПолярТех».
+    
+    Правильный ответ:
+    {"entities": [{"name": "BZ-220", "type": "Model"}, {"name": "Бриз", "type": "ProductLine"}], 
+    "relations": [{"subject": "BZ-220", "subject_type": "Model", "type": "BELONGS_TO", "object": "Бриз", 
+    "object_type": "ProductLine"}]}
+    
+    5. Пример для FAILED (из отчета о выезде!):
+    Текст: Оборудование: витрина AR-210. Диагностика показала отказ узла: пусковое реле.
+    
+    Правильный ответ:
+    {"entities": [{"name": "AR-210", "type": "Model"}, {"name": "пусковое реле", "type": "Component"}], 
+    "relations": [{"subject": "AR-210", "subject_type": "Model", "type": "FAILED", "object": "пусковое реле", 
+    "object_type": "Component"}]}
+    
+    Требование: Возвращай только JSON по схеме, без пояснений.
     """
 
     messages = [
@@ -115,20 +153,26 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
 
     # обработка связей
     relations = []
-    for relation in content["relations"]:
+    for i, relation in enumerate(content["relations"]):
         type = relation["type"]
-        object_type = relation["object_type"]
-        subject_type = relation["subject_type"]
 
+        # Проверка, что связь корректна
         if type not in RELATION_SIGNATURES:
             dropped += 1
             relation["dropped"] = True
             continue
 
-        if (subject_type, object_type) != RELATION_SIGNATURES[type]:
-            dropped += 1
-            relation["dropped"] = True
-            continue
+        signature = (relation["subject_type"], relation["object_type"])
+        if signature != RELATION_SIGNATURES[type]:
+            relation = try_to_swap_connection(relation)
+            signature = (relation["subject_type"], relation["object_type"])
+
+            if signature != RELATION_SIGNATURES[type]:
+                dropped += 1
+                relation["dropped"] = True
+                continue
+            else:
+                content["relations"][i] = relation
 
         # приведение связей к каноническому виду
         ok = True
@@ -145,6 +189,9 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
         # Проверяем, что все сущности в связях есть в тексте чанка
         subject = relation["subject"]
         object = relation["object"]
+        object_type = relation["object_type"]
+        subject_type = relation["subject_type"]
+
         if subject_type in code_types and subject not in all_codes:
             dropped += 1
             continue
@@ -201,3 +248,19 @@ def canonicalize(stype: str, sname: str, vocabulary: dict) -> str | None:
         return canonical
 
     return None
+
+
+def try_to_swap_connection(relation: dict[str, str]) -> dict[str, Any]:
+    relation_type = relation["type"]
+    signature = (relation["subject_type"], relation["object_type"])
+
+    if signature[0] != signature[1] and signature[::-1] == RELATION_SIGNATURES[relation_type]:
+        return {
+            "subject": relation["object"],
+            "object": relation["subject"],
+            "subject_type": relation["object_type"],
+            "object_type": relation["subject_type"],
+            "type": relation_type
+        }
+
+    return relation
