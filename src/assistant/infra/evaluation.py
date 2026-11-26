@@ -4,6 +4,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from tqdm import tqdm
 
 from assistant.infra.grounding import code_type, find_codes, normalize_code
 from assistant.infra.schemas import ExtractionResult, ToolStep
@@ -94,7 +95,7 @@ def evaluate(questions: list[dict], run: Callable[[dict], Outcome], known_codes:
     stats – счётчики LLMClient. По их приросту считается стоимость одного вопроса.
     """
     rows = []
-    for question in questions:
+    for question in tqdm(questions):
         before = (stats.calls, stats.prompt_tokens + stats.completion_tokens) if stats else (0, 0)
         outcome = run(question)
         after = (stats.calls, stats.prompt_tokens + stats.completion_tokens) if stats else (0, 0)
