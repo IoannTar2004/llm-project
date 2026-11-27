@@ -3,12 +3,12 @@
   "nodes": 122,
   "edges": 279,
   "communities": 12,
-  "dropped": 36,
+  "dropped": 23,
   "conflicts": 0,
   "llm": {
     "calls": 104,
-    "cache_hits": 20,
+    "cache_hits": 27,
     "prompt_tokens": 228865,
-    "completion_tokens": 38911
+    "completion_tokens": 38751
   }
 }

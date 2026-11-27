@@ -38,8 +38,8 @@ TOOL_SCHEMAS: list[dict] = [
         "function": {
             "name": "summarize_topic",
             "description": (
-                "Собирает сводку по теме из нескольких документов базы знаний. "
-                "Возвращает answer, sources и признак refused."
+                "Собирает сводку по теме из релевантных сообществ базы знаний. "
+                "Возвращает answer, проверяемые facts, sources и признак refused."
             ),
             "parameters": {
                 "type": "object",
@@ -161,6 +161,7 @@ def build_tools(kb: KnowledgeBase, llm: LLMClient, erp: ErpClient) -> dict[str, 
         search_result = search.global_search(question, kb, llm)
         return {
             "answer": search_result.text,
+            "facts": search_result.facts,
             "sources": search_result.sources,
             "refused": search_result.refused
         }
