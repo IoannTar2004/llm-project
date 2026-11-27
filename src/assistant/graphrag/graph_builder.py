@@ -43,6 +43,10 @@ def build_graph(results: list[ExtractionResult]) -> nx.DiGraph:
             subject_id = relation.subject.node_id
             object_id = relation.object.node_id
 
+            # Самоссылочная замена не описывает замену одной детали другой.
+            if relation.type == "REPLACED_BY" and subject_id == object_id:
+                continue
+
             # Концы допустимой связи также должны присутствовать в графе
             add_node(relation.subject, chunk_id)
             add_node(relation.object, chunk_id)
@@ -94,6 +98,10 @@ def build_graph(results: list[ExtractionResult]) -> nx.DiGraph:
             continue
 
         processed_pairs.add(pair)
+
+        # Самоссылка не образует конфликтующей пары двух разных деталей.
+        if subject_id == object_id:
+            continue
 
         if not graph.has_edge(object_id, subject_id):
             continue

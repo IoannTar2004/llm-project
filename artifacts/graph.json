@@ -290,7 +290,6 @@
         "manual_GS-520.md#1",
         "procedure_SP-101.md#0",
         "procedure_SP-102.md#0",
-        "report_R-2025-012.md#0",
         "report_R-2025-040.md#0"
       ]
     },
@@ -1556,6 +1555,14 @@
       "sources": [
         "procedure_SP-117.md#0"
       ]
+    },
+    {
+      "id": "Procedure:SP-118",
+      "type": "Procedure",
+      "name": "SP-118",
+      "sources": [
+        "procedure_SP-118.md#0"
+      ]
     }
   ],
   "edges": [
@@ -1694,6 +1701,16 @@
       "weight": 1,
       "sources": [
         "bulletin_SB-2025-04.md#0"
+      ]
+    },
+    {
+      "source": "Part:P-2054",
+      "target": "Supplier:ТермоПрибор",
+      "type": "SUPPLIED_BY",
+      "weight": 2,
+      "sources": [
+        "manual_BZ-110.md#0",
+        "manual_BZ-120.md#0"
       ]
     },
     {
@@ -1891,8 +1908,9 @@
       "source": "Part:P-1014",
       "target": "Supplier:ВентПром",
       "type": "SUPPLIED_BY",
-      "weight": 2,
+      "weight": 3,
       "sources": [
+        "bulletin_SB-2025-10.md#0",
         "manual_AR-210.md#0",
         "manual_AR-220.md#0"
       ]
@@ -2292,7 +2310,7 @@
       "source": "ErrorCode:E-17",
       "target": "Component:пусковое реле",
       "type": "INDICATES",
-      "weight": 13,
+      "weight": 14,
       "sources": [
         "manual_AR-210.md#1",
         "manual_AR-220.md#1",
@@ -2301,6 +2319,7 @@
         "procedure_SP-104.md#0",
         "report_R-2025-003.md#0",
         "report_R-2025-010.md#0",
+        "report_R-2025-012.md#0",
         "report_R-2025-023.md#0",
         "report_R-2025-028.md#0",
         "report_R-2025-034.md#0",
@@ -2316,15 +2335,6 @@
       "weight": 1,
       "sources": [
         "procedure_SP-104.md#0"
-      ]
-    },
-    {
-      "source": "ErrorCode:E-17",
-      "target": "Component:компрессор",
-      "type": "INDICATES",
-      "weight": 1,
-      "sources": [
-        "report_R-2025-012.md#0"
       ]
     },
     {
@@ -2737,8 +2747,9 @@
       "source": "Part:P-1146",
       "target": "Supplier:ВентПром",
       "type": "SUPPLIED_BY",
-      "weight": 1,
+      "weight": 2,
       "sources": [
+        "manual_AR-310.md#0",
         "manual_AR-320.md#0"
       ]
     },
@@ -2756,8 +2767,9 @@
       "source": "Part:P-1150",
       "target": "Supplier:АвтоматикаСевер",
       "type": "SUPPLIED_BY",
-      "weight": 1,
+      "weight": 2,
       "sources": [
+        "manual_AR-310.md#0",
         "manual_AR-320.md#0"
       ]
     },
@@ -3072,9 +3084,29 @@
       ]
     },
     {
+      "source": "Part:P-2046",
+      "target": "Supplier:ВентПром",
+      "type": "SUPPLIED_BY",
+      "weight": 2,
+      "sources": [
+        "manual_BZ-110.md#0",
+        "manual_BZ-120.md#0"
+      ]
+    },
+    {
       "source": "Part:P-2058",
       "target": "Component:терморегулирующий вентиль",
       "type": "IS_A",
+      "weight": 2,
+      "sources": [
+        "manual_BZ-110.md#0",
+        "manual_BZ-120.md#0"
+      ]
+    },
+    {
+      "source": "Part:P-2058",
+      "target": "Supplier:ТермоПрибор",
+      "type": "SUPPLIED_BY",
       "weight": 2,
       "sources": [
         "manual_BZ-110.md#0",
@@ -3253,6 +3285,78 @@
     },
     {
       "source": "Model:BZ-210",
+      "target": "Part:P-2110",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-210.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-210",
+      "target": "Part:P-2114",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-210.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-210",
+      "target": "Part:P-2118",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-210.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-210",
+      "target": "Part:P-2122",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-210.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-210",
+      "target": "Part:P-2126",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-210.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-210",
+      "target": "Part:P-2146",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-210.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-210",
+      "target": "Part:P-2154",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-210.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-210",
+      "target": "Part:P-2158",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-210.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-210",
       "target": "Component:вентилятор испарителя",
       "type": "FAILED",
       "weight": 2,
@@ -3421,6 +3525,78 @@
     },
     {
       "source": "Model:BZ-220",
+      "target": "Part:P-2110",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-220.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-220",
+      "target": "Part:P-2114",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-220.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-220",
+      "target": "Part:P-2118",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-220.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-220",
+      "target": "Part:P-2122",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-220.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-220",
+      "target": "Part:P-2126",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-220.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-220",
+      "target": "Part:P-2146",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-220.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-220",
+      "target": "Part:P-2154",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-220.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-220",
+      "target": "Part:P-2158",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_BZ-220.md#0"
+      ]
+    },
+    {
+      "source": "Model:BZ-220",
       "target": "Component:вентилятор испарителя",
       "type": "FAILED",
       "weight": 2,
@@ -3442,6 +3618,78 @@
       "source": "Model:GS-410",
       "target": "ProductLine:Гольфстрим",
       "type": "BELONGS_TO",
+      "weight": 1,
+      "sources": [
+        "manual_GS-410.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-410",
+      "target": "Part:P-3010",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-410.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-410",
+      "target": "Part:P-3014",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-410.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-410",
+      "target": "Part:P-3018",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-410.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-410",
+      "target": "Part:P-3022",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-410.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-410",
+      "target": "Part:P-3026",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-410.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-410",
+      "target": "Part:P-3062",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-410.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-410",
+      "target": "Part:P-3058",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-410.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-410",
+      "target": "Part:P-3066",
+      "type": "HAS_PART",
       "weight": 1,
       "sources": [
         "manual_GS-410.md#0"
@@ -3669,6 +3917,78 @@
     },
     {
       "source": "Model:GS-420",
+      "target": "Part:P-3010",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-420.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-420",
+      "target": "Part:P-3014",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-420.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-420",
+      "target": "Part:P-3018",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-420.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-420",
+      "target": "Part:P-3022",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-420.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-420",
+      "target": "Part:P-3026",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-420.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-420",
+      "target": "Part:P-3062",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-420.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-420",
+      "target": "Part:P-3058",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-420.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-420",
+      "target": "Part:P-3066",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-420.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-420",
       "target": "Component:циркуляционный насос",
       "type": "FAILED",
       "weight": 2,
@@ -3690,6 +4010,78 @@
       "source": "Model:GS-510",
       "target": "ProductLine:Гольфстрим",
       "type": "BELONGS_TO",
+      "weight": 1,
+      "sources": [
+        "manual_GS-510.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-510",
+      "target": "Part:P-3110",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-510.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-510",
+      "target": "Part:P-3114",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-510.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-510",
+      "target": "Part:P-3118",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-510.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-510",
+      "target": "Part:P-3122",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-510.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-510",
+      "target": "Part:P-3126",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-510.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-510",
+      "target": "Part:P-3162",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-510.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-510",
+      "target": "Part:P-3158",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-510.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-510",
+      "target": "Part:P-3166",
+      "type": "HAS_PART",
       "weight": 1,
       "sources": [
         "manual_GS-510.md#0"
@@ -3867,6 +4259,78 @@
       "source": "Model:GS-520",
       "target": "ProductLine:Гольфстрим",
       "type": "BELONGS_TO",
+      "weight": 1,
+      "sources": [
+        "manual_GS-520.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-520",
+      "target": "Part:P-3110",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-520.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-520",
+      "target": "Part:P-3114",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-520.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-520",
+      "target": "Part:P-3118",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-520.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-520",
+      "target": "Part:P-3122",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-520.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-520",
+      "target": "Part:P-3126",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-520.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-520",
+      "target": "Part:P-3162",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-520.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-520",
+      "target": "Part:P-3158",
+      "type": "HAS_PART",
+      "weight": 1,
+      "sources": [
+        "manual_GS-520.md#0"
+      ]
+    },
+    {
+      "source": "Model:GS-520",
+      "target": "Part:P-3166",
+      "type": "HAS_PART",
       "weight": 1,
       "sources": [
         "manual_GS-520.md#0"

@@ -1,9 +1,10 @@
 """Извлечение сущностей и связей из чанка. Требование FR-1."""
 import json
+import re
 from typing import Any
 
 from assistant.infra.config import vocabulary
-from assistant.infra.grounding import canonical_name, find_codes, normalize_code
+from assistant.infra.grounding import canonical_name, code_type, find_codes
 from assistant.infra.llm import LLMClient
 from assistant.infra.schemas import (
     EXTRACTION_SCHEMA,
@@ -53,7 +54,8 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     Важно: 
     Связь должна быть такой (Subject → Object).
     Правила направления связей:
-    Направление связи строго определяется её типом. Порядок упоминания сущностей в тексте не определяет направление связи.
+    Направление связи строго определяется её типом. Порядок упоминания сущностей в тексте
+    не определяет направление связи.
     Например:
     «Поставщик Х поставляет деталь P-1042» → P-1042 SUPPLIED_BY Х.
     «Линейка Бриз включает модель BZ-220» → BZ-220 BELONGS_TO Бриз.
@@ -89,10 +91,16 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     Текст: При ошибке E-11 отказал компрессор, ремонт по регламенту SP-101.
     
     Правильный ответ:
-    {"entities": [{"name": "E-11", "type": "ErrorCode"}, {"name": "компрессор", "type": "Component"}, {"name": "SP-101", 
-    "type": "Procedure"}], "relations": [{"subject": "E-11", "subject_type": "ErrorCode", "type": "INDICATES", "object":
-    "компрессор", "object_type": "Component"}, {"subject": "E-11", "subject_type": "ErrorCode", "type": "FIXED_BY", 
-    "object": "SP-101", "object_type": "Procedure"}]}
+    {"entities": [
+    {"name": "E-11", "type": "ErrorCode"},
+    {"name": "компрессор", "type": "Component"},
+    {"name": "SP-101", "type": "Procedure"}
+    ], "relations": [
+    {"subject": "E-11", "subject_type": "ErrorCode", "type": "INDICATES",
+    "object": "компрессор", "object_type": "Component"},
+    {"subject": "E-11", "subject_type": "ErrorCode", "type": "FIXED_BY",
+    "object": "SP-101", "object_type": "Procedure"}
+    ]}
     
     3. Пример для HAS_PART, IS_A и SUPPLIED_BY (из списка узлов):
     Текст: В AR-210 установлены следующие узлы. пусковое реле – деталь P-1042, поставщик «ХолодКомплект».
@@ -124,88 +132,219 @@ def extract_chunk(chunk: Chunk, llm: LLMClient) -> ExtractionResult:
     Требование: Возвращай только JSON по схеме, без пояснений.
     """
 
+    _vocabulary = vocabulary()
+    all_codes = find_codes(chunk.text)
+    inventory_entities, inventory_relations = extract_inventory_facts(
+        chunk, all_codes, _vocabulary
+    )
+    report_entities, report_relations = extract_supplier_report_facts(
+        chunk, all_codes, _vocabulary
+    )
+    deterministic_entities = {
+        entity.node_id: entity for entity in (*inventory_entities, *report_entities)
+    }
+    deterministic_relations = {
+        (relation.subject.node_id, relation.type, relation.object.node_id): relation
+        for relation in (*inventory_relations, *report_relations)
+    }
+
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": chunk.text}
     ]
 
-    # Делаем две попытки на генерацию валидного json
-    for _ in range(2):
+    # Две попытки с отдельным корректирующим сообщением при невалидном JSON.
+    for attempt in range(2):
         llm_response = llm.chat(messages, json_schema=EXTRACTION_SCHEMA)
         content = get_extracted_json(llm_response.content)
         if content != {}:
             break
+        if attempt == 0:
+            messages.append({
+                "role": "user",
+                "content": (
+                    "Предыдущий ответ не прошёл проверку структуры JSON. "
+                    "Повтори извлечение и верни корректный JSON с обязательными массивами "
+                    "entities и relations, сохранив все найденные факты."
+                ),
+            })
     else:
+        # После двух неудачных попыток возврат пустого результата по FR-1.
         return ExtractionResult(chunk.chunk_id, chunk.doc_id, [], [], 0)
 
     dropped = 0
-    _vocabulary = vocabulary()
-    all_codes = find_codes(chunk.text)
-    # обработка сущностей
-    for entity in content["entities"]:
-        entity_type = entity["type"]
+    accepted_entities: dict[str, Entity] = {}
 
-        # приведение названий деталей к каноническому виду
-        entity["name"] = canonicalize(entity["type"], entity["name"], _vocabulary)
-        if entity["name"] is None or entity_type in code_types and entity["name"] not in all_codes:
-            entity["dropped"] = True
+    # Канонизация и проверка сущностей, возвращённых моделью.
+    for raw_entity in content["entities"]:
+        entity_type = raw_entity["type"]
+        canonical = canonicalize(entity_type, raw_entity["name"], _vocabulary)
+        if canonical is None or (entity_type in code_types and canonical not in all_codes):
             dropped += 1
             continue
 
-    entities = [Entity(e["type"], e["name"]) for e in content["entities"] if "dropped" not in e]
+        entity = Entity(entity_type, canonical)
+        accepted_entities[entity.node_id] = entity
 
-    # обработка связей
-    relations = []
-    for i, relation in enumerate(content["relations"]):
-        type = relation["type"]
+    # Добавление сущностей из явно структурированных строк корпуса.
+    for entity in deterministic_entities.values():
+        accepted_entities[entity.node_id] = entity
 
-        # Проверка, что связь корректна
-        if type not in RELATION_SIGNATURES:
+    accepted_relations: dict[tuple[str, str, str], Relation] = {}
+
+    # Канонизация и проверка отношений, включая наличие обоих концов среди принятых сущностей.
+    for raw_relation in content["relations"]:
+        relation_type = raw_relation["type"]
+        if relation_type not in RELATION_SIGNATURES:
             dropped += 1
-            relation["dropped"] = True
             continue
 
-        signature = (relation["subject_type"], relation["object_type"])
-        if signature != RELATION_SIGNATURES[type]:
-            relation = try_to_swap_connection(relation)
-            signature = (relation["subject_type"], relation["object_type"])
-
-            if signature != RELATION_SIGNATURES[type]:
+        relation_data = raw_relation
+        signature = (relation_data["subject_type"], relation_data["object_type"])
+        if signature != RELATION_SIGNATURES[relation_type]:
+            relation_data = try_to_swap_connection(relation_data)
+            signature = (relation_data["subject_type"], relation_data["object_type"])
+            if signature != RELATION_SIGNATURES[relation_type]:
                 dropped += 1
-                relation["dropped"] = True
                 continue
-            else:
-                content["relations"][i] = relation
 
-        # приведение связей к каноническому виду
-        ok = True
-        for side in ("subject", "object"):
-            relation[side] = canonicalize(relation[f"{side}_type"], relation[side], _vocabulary)
-            if not relation[side]:
-                ok = False
-                break
-        if not ok:
+        subject_type = relation_data["subject_type"]
+        object_type = relation_data["object_type"]
+        subject_name = canonicalize(subject_type, relation_data["subject"], _vocabulary)
+        object_name = canonicalize(object_type, relation_data["object"], _vocabulary)
+
+        if subject_name is None or object_name is None:
             dropped += 1
-            relation["dropped"] = True
             continue
-
-        # Проверяем, что все сущности в связях есть в тексте чанка
-        subject = relation["subject"]
-        object = relation["object"]
-        object_type = relation["object_type"]
-        subject_type = relation["subject_type"]
-
-        if subject_type in code_types and subject not in all_codes:
+        if subject_type in code_types and subject_name not in all_codes:
+            dropped += 1
+            continue
+        if object_type in code_types and object_name not in all_codes:
             dropped += 1
             continue
 
-        if object_type in code_types and object not in all_codes:
+        subject_entity = Entity(subject_type, subject_name)
+        object_entity = Entity(object_type, object_name)
+
+        # По FR-1 отношение сохраняется только при наличии обоих принятых концов.
+        relation = Relation(subject_entity, relation_type, object_entity)
+        if not relation.matches_schema():
             dropped += 1
             continue
 
-        relations.append(Relation(Entity(subject_type, subject), type, Entity(object_type, object)))
+        # Добавление проверенных концов отношения в список принятых сущностей.
+        accepted_entities.setdefault(subject_entity.node_id, subject_entity)
+        accepted_entities.setdefault(object_entity.node_id, object_entity)
 
-    return ExtractionResult(chunk.chunk_id, chunk.doc_id, entities, relations, dropped)
+        relation_id = (subject_entity.node_id, relation_type, object_entity.node_id)
+        accepted_relations[relation_id] = relation
+
+    # Добавление детерминированных отношений после проверки их схемы.
+    for relation_id, relation in deterministic_relations.items():
+        if relation.matches_schema():
+            accepted_entities.setdefault(relation.subject.node_id, relation.subject)
+            accepted_entities.setdefault(relation.object.node_id, relation.object)
+            accepted_relations.setdefault(relation_id, relation)
+
+    return ExtractionResult(
+        chunk.chunk_id,
+        chunk.doc_id,
+        list(accepted_entities.values()),
+        list(accepted_relations.values()),
+        dropped,
+    )
+
+_INVENTORY_LINE = re.compile(
+    r'^\s*[-*]\s*(?P<component>.+?)\s+[–—-]\s*деталь\s+'
+    r'(?P<part>P-\d{4}[A-Z]?)\s*,\s*поставщик\s*[«"]'
+    r'(?P<supplier>[^»"]+)[»"]\s*$',
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def extract_inventory_facts(
+    chunk: Chunk,
+    all_codes: list[str],
+    vocabulary: dict[str, list[str]],
+) -> tuple[list[Entity], list[Relation]]:
+    """Извлечение явных соответствий модель–узел–деталь из списка состава узлов."""
+    if not re.search(r"^##\s+Состав узлов\s*$", chunk.text, re.IGNORECASE | re.MULTILINE):
+        return [], []
+
+    model_codes = [code for code in all_codes if code_type(code) == "Model"]
+    if len(model_codes) != 1:
+        return [], []
+
+    model = canonical_name("Model", model_codes[0], vocabulary)
+    if model is None:
+        return [], []
+
+    entities: dict[str, Entity] = {}
+    relations: dict[tuple[str, str, str], Relation] = {}
+    model_entity = Entity("Model", model)
+    entities[model_entity.node_id] = model_entity
+
+    for match in _INVENTORY_LINE.finditer(chunk.text):
+        component = canonical_name("Component", match.group("component"), vocabulary)
+        part = canonical_name("Part", match.group("part"), vocabulary)
+        supplier = canonical_name("Supplier", match.group("supplier"), vocabulary)
+
+        if not component or not part or not supplier or part not in all_codes:
+            continue
+
+        part_entity = Entity("Part", part)
+        component_entity = Entity("Component", component)
+        supplier_entity = Entity("Supplier", supplier)
+
+        for entity in (part_entity, component_entity, supplier_entity):
+            entities[entity.node_id] = entity
+
+        inventory_relations = (
+            Relation(model_entity, "HAS_PART", part_entity),
+            Relation(part_entity, "IS_A", component_entity),
+            Relation(part_entity, "SUPPLIED_BY", supplier_entity),
+        )
+        for relation in inventory_relations:
+            if relation.matches_schema():
+                relation_id = (relation.subject.node_id, relation.type, relation.object.node_id)
+                relations[relation_id] = relation
+
+    return list(entities.values()), list(relations.values())
+
+
+_SUPPLIER_REPORT = re.compile(
+    r'Поставщик\s*[«"](?P<supplier>[^»"]+)[»"]\s+сообщил(?:а|и)?\s+о\s+дефекте\s+'
+    r'партии\s+детали\s+(?P<part>P-\d{4}[A-Z]?)',
+    re.IGNORECASE,
+)
+
+
+def extract_supplier_report_facts(
+    chunk: Chunk,
+    all_codes: list[str],
+    vocabulary: dict[str, list[str]],
+) -> tuple[list[Entity], list[Relation]]:
+    """Извлечение явной связи поставщика с деталью из сообщения поставщика."""
+    entities: dict[str, Entity] = {}
+    relations: dict[tuple[str, str, str], Relation] = {}
+
+    for match in _SUPPLIER_REPORT.finditer(chunk.text):
+        part = canonical_name("Part", match.group("part"), vocabulary)
+        supplier = canonical_name("Supplier", match.group("supplier"), vocabulary)
+        if not part or part not in all_codes or not supplier:
+            continue
+
+        part_entity = Entity("Part", part)
+        supplier_entity = Entity("Supplier", supplier)
+        entities[part_entity.node_id] = part_entity
+        entities[supplier_entity.node_id] = supplier_entity
+
+        relation = Relation(part_entity, "SUPPLIED_BY", supplier_entity)
+        if relation.matches_schema():
+            relation_id = (part_entity.node_id, relation.type, supplier_entity.node_id)
+            relations[relation_id] = relation
+
+    return list(entities.values()), list(relations.values())
 
 
 def get_extracted_json(llm_response: str) -> Any:
@@ -217,17 +356,27 @@ def get_extracted_json(llm_response: str) -> Any:
     except json.decoder.JSONDecodeError:
         return {}
 
-    if not assert_fields(json_response, ["entities", "relations"]):
+    if not isinstance(json_response, dict) or not assert_fields(json_response, ["entities", "relations"]):
         return {}
 
     entities = json_response["entities"]
     relations = json_response["relations"]
+    if not isinstance(entities, list) or not isinstance(relations, list):
+        return {}
 
-    for e in entities:
-        if not assert_fields(e, ["name", "type"]):
+    for entity in entities:
+        if not isinstance(entity, dict) or not assert_fields(entity, ["name", "type"]):
             return {}
-    for r in relations:
-        if not assert_fields(r, ["subject", "object", "subject_type", "object_type", "type"]):
+        if not isinstance(entity["name"], str) or not isinstance(entity["type"], str):
+            return {}
+    for relation in relations:
+        if not isinstance(relation, dict) or not assert_fields(
+            relation, ["subject", "object", "subject_type", "object_type", "type"]
+        ):
+            return {}
+        if not all(isinstance(relation[field], str) for field in (
+            "subject", "object", "subject_type", "object_type", "type"
+        )):
             return {}
 
     return json_response
@@ -244,12 +393,8 @@ def canonicalize(stype: str, sname: str, vocabulary: dict) -> str | None:
     """
     Приведение кода/названия к каноническому виду
     """
-    if stype in code_types:
-        return normalize_code(sname)
-    if stype in named_types:
-        canonical = canonical_name(stype, sname, vocabulary)
-        return canonical
-
+    if stype in code_types or stype in named_types:
+        return canonical_name(stype, sname, vocabulary)
     return None
 
 
