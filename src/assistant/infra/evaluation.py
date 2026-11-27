@@ -4,6 +4,7 @@ import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
+
 from tqdm import tqdm
 
 from assistant.infra.grounding import code_type, find_codes, normalize_code

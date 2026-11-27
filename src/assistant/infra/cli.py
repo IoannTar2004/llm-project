@@ -5,6 +5,7 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
 from tqdm import tqdm
 
 from assistant.infra import indexing
