@@ -175,7 +175,7 @@ def build_tools(kb: KnowledgeBase, llm: LLMClient, erp: ErpClient) -> dict[str, 
         try:
             response = erp.get_stock(part_id, warehouse)
         except ErpNotFound as e:
-            return {"error": f"Деталь не найдена в ERP: {e}"}
+            return {"error": f"Деталь не найдена в ERP: {e}", "error_type": "not_found"}
         except ErpRejected as e:
             return {"error": f"ERP отклонил операцию: {e}"}
 
@@ -188,7 +188,7 @@ def build_tools(kb: KnowledgeBase, llm: LLMClient, erp: ErpClient) -> dict[str, 
         try:
             response = erp.get_price(part_id)
         except ErpNotFound as e:
-            return {"error": f"Деталь не найдена в ERP: {e}"}
+            return {"error": f"Деталь не найдена в ERP: {e}", "error_type": "not_found"}
         except ErpRejected as e:
             return {"error": f"ERP отклонил операцию: {e}"}
 
@@ -207,7 +207,7 @@ def build_tools(kb: KnowledgeBase, llm: LLMClient, erp: ErpClient) -> dict[str, 
         try:
             response = erp.create_order(part_id, warehouse, qty, model)
         except ErpNotFound as e:
-            return {"error": f"Деталь не найдена в ERP: {e}"}
+            return {"error": f"Деталь не найдена в ERP: {e}", "error_type": "not_found"}
         except ErpRejected as e:
             return {"error": f"ERP отклонил операцию: {e}"}
 
