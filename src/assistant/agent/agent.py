@@ -169,6 +169,7 @@ def run_agent(
             else:
                 tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, result))
 
+            # Когда данных для ответа нет, ассистент пишет «в базе знаний не найдено» и возвращает refused=True (FR-10)
             if result.get("refused"):
                 return AgentResult(
                     "В базе знаний не найдено.",
