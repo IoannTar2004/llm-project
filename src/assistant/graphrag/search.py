@@ -308,10 +308,23 @@ def _collect_single_anchor_edges(
                     selected_edges.add((model, target))
                     starting_parts.add(target)
 
+    elif node_type == "Procedure":
+        for error_code in sorted(graph.predecessors(anchor)):
+            if not _has_relation(graph, error_code, anchor, "FIXED_BY"):
+                continue
+            selected_edges.add((error_code, anchor))
+            for target in sorted(graph.successors(error_code)):
+                _add_edge(graph, selected_edges, error_code, target)
+
     elif node_type == "Supplier":
         for part in sorted(graph.predecessors(anchor)):
-            _add_edge(graph, selected_edges, part, anchor, {"SUPPLIED_BY"})
-            starting_parts.add(part)
+            if not _has_relation(graph, part, anchor, "SUPPLIED_BY"):
+                continue
+            selected_edges.add((part, anchor))
+            for source in sorted(graph.predecessors(part)):
+                _add_edge(graph, selected_edges, source, part)
+            for target in sorted(graph.successors(part)):
+                _add_edge(graph, selected_edges, part, target)
 
     else:
         # Резервный сбор непосредственных связей для остальных типов сущностей.
@@ -912,13 +925,6 @@ def global_search(question: str, kb: KnowledgeBase, llm: LLMClient) -> Answer:
         useful_answers.append(partial_text.strip())
         sources.update(_community_sources(kb, community.nodes))
 
-    # Добавление детерминированной сводки графа независимо от результата Map.
-    if graph_context:
-        useful_answers.append(
-            "ДЕТЕРМИНИРОВАННЫЕ ДАННЫЕ ГРАФА (приоритет над ответами Map):\n"
-            + "\n".join(graph_context)
-        )
-
     if not useful_answers:
         return _refused_answer()
 
@@ -926,6 +932,13 @@ def global_search(question: str, kb: KnowledgeBase, llm: LLMClient) -> Answer:
         f"{index}. {answer}"
         for index, answer in enumerate(useful_answers, start=1)
     )
+    # Проверяемая статистика графа остаётся доступной на этапе Reduce,
+    # но не считается успешным частичным ответом Map.
+    if graph_context:
+        partial_answers_text += (
+            "\n\nДЕТЕРМИНИРОВАННЫЕ ДАННЫЕ ГРАФА (приоритет над ответами Map):\n"
+            + "\n".join(graph_context)
+        )
 
     # Шаг reduce: объединение только полезных частичных ответов.
     response = llm.chat(
