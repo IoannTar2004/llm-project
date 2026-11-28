@@ -34,8 +34,10 @@ def run_agent(
     Ты экспертный ИИ-ассистент, работающий с базой знаний и ERP.
 
     Порядок работы:
-    1. Если вопрос содержит модель, код ошибки или название узла, но не содержит код детали P-..., 
-       сначала вызови search_knowledge с исходным вопросом. Не угадывай код детали.
+    1. Если для ответа нужны сведения из базы знаний, сначала вызови search_knowledge с исходным
+       вопросом. Это правило действует независимо от того, указан ли в вопросе код детали P-..., 
+       модели, код ошибки или название узла. Наличие кода детали в вопросе не заменяет поиск и не означает, 
+       что сведения о ней уже известны.
     2. Для check_stock, get_price и create_service_order используй только Part-код, который прямо
        указан пользователем или присутствует в фактах, возвращённых search_knowledge.
     3. Если деталь указана через модель, ошибку или название узла, сначала найди связь с Part
@@ -66,11 +68,8 @@ def run_agent(
     tool_steps = []
     calls = {}
     retries = 0
-    knowledge_search_done = False
-    step_limit = max(0, max_steps)
 
-    # Дополнительные итерации оставлены для финального ответа и одной перепроверки.
-    for _ in range(step_limit + 2):
+    for _ in range(max_steps):
         llm_response = llm.chat(messages, tools=TOOL_SCHEMAS)
         if not llm_response.tool_calls and llm_response.content:
             # Если данные в ответе не соответствуют данным из вопроса и из результатов инструментов, просим модель
@@ -79,7 +78,7 @@ def run_agent(
                 if retries < 1:
                     messages.append({
                         "role": "user",
-                        "content":  (
+                        "content": (
                             "В твоём ответе есть неподтверждённые коды, числа, цены или количества. "
                             "Пересмотри ответ, используя только данные из вопроса и результатов инструментов. "
                             "Удали все неподтверждённые сведения. Если ответить достоверно невозможно, "
@@ -96,17 +95,8 @@ def run_agent(
             else:
                 return AgentResult(llm_response.content, tool_steps, get_all_sources(tool_steps))
 
-        automatic_search_required = False
-
         for tool_call in llm_response.tool_calls:
-            if len(tool_steps) >= step_limit:
-                return AgentResult(
-                    "Работа прервана. Достигнут лимит шагов.",
-                    tool_steps,
-                    get_all_sources(tool_steps),
-                )
-
-            key = (tool_call.name, json.dumps(tool_call.arguments, ensure_ascii=False, sort_keys=True))
+            key = (tool_call.name, frozenset(tool_call.arguments.items()))
 
             if key not in calls:
                 # Валидация инструмента и его аргументов (FR-7).
@@ -116,27 +106,22 @@ def run_agent(
                     tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, None, error))
                     continue
 
-                # Проверка Part-кода для всех ERP-операций (FR-7).
-                if tool_call.name in {"check_stock", "get_price", "create_service_order"}:
-                    part_id = tool_call.arguments["part_id"]
-                    if not verify_answer(part_id, question, tool_steps):
-                        error = (
-                            f"Деталь {part_id} не подтверждена вопросом или фактами поиска. "
-                            "Сначала вызови search_knowledge и используй Part-код из поля facts."
-                        )
+                # Проверка того, что part_id содержится в вопросе и/или в результатах вызванных инструментов (FR-7).
+                if tool_call.name in ("get_price", "create_service_order"):
+                    if not verify_answer(tool_call.arguments["part_id"], question, tool_steps):
+                        error = (f'Деталь {tool_call.arguments["part_id"]} '
+                                 f'не упоминается ни в вопросе, ни в результатах вызовов инструментов')
                         add_message_with_tool(messages, tool_call, {"error": error})
                         tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, None, error))
-                        if not knowledge_search_done:
-                            automatic_search_required = True
                         continue
 
-                # Количество заказа проверяется только по исходному вопросу пользователя.
+                # Проверка того, что qty содержится в вопросе и/или в результатах вызванных инструментов (FR-7).
                 if tool_call.name == "create_service_order":
-                    requested_numbers = extract_codes_and_numbers(question)
-                    if str(tool_call.arguments["qty"]) not in requested_numbers:
-                        error = "Количество деталей не указано в исходном вопросе. Уточни его у пользователя."
+                    if not verify_answer(str(tool_call.arguments["qty"]), question, tool_steps):
+                        error = "Неизвестно количество деталей, которое требуется заказать. Уточни у пользователя."
                         add_message_with_tool(messages, tool_call, {"error": error})
                         tool_steps.append(ToolStep(tool_call.name, tool_call.arguments, None, error))
+
                         continue
 
                 func = tools[tool_call.name]
@@ -177,52 +162,6 @@ def run_agent(
 
             add_message_with_tool(messages, tool_call, result)
             calls[key] = result
-            if tool_call.name == "search_knowledge":
-                knowledge_search_done = True
-
-        # Если модель попыталась обратиться к ERP до поиска детали, выполняется один обязательный поиск.
-        if automatic_search_required and not knowledge_search_done:
-            if len(tool_steps) >= step_limit:
-                return AgentResult(
-                    "Работа прервана. Достигнут лимит шагов.",
-                    tool_steps,
-                    get_all_sources(tool_steps),
-                )
-            search_function = tools.get("search_knowledge")
-            if search_function is not None:
-                search_args = {"question": question}
-                try:
-                    search_result = search_function(**search_args)
-                    tool_steps.append(ToolStep("search_knowledge", search_args, search_result))
-                    knowledge_search_done = True
-                    search_key = (
-                        "search_knowledge",
-                        json.dumps(search_args, ensure_ascii=False, sort_keys=True),
-                    )
-                    calls[search_key] = search_result
-                    messages.append({
-                        "role": "user",
-                        "content": (
-                            "Обязательный поиск детали выполнен автоматически после отклонения "
-                            "неподтверждённого Part-кода. Используй только коды и связи из facts; "
-                            "после этого можно повторить ERP-запрос:\n"
-                            + json.dumps(search_result, ensure_ascii=False)
-                        ),
-                    })
-                    if search_result.get("refused"):
-                        return AgentResult(
-                            "В базе знаний не найдено.",
-                            tool_steps,
-                            get_all_sources(tool_steps),
-                            True,
-                        )
-                except Exception as error:  # noqa: BLE001
-                    search_error = {"error": f"Не удалось выполнить поиск детали: {error}"}
-                    tool_steps.append(ToolStep("search_knowledge", search_args, None, search_error["error"]))
-                    messages.append({
-                        "role": "user",
-                        "content": search_error["error"],
-                    })
 
     # Лимит шагов исчерпан, агент возвращает то, что успел узнать (FR-7).
     return AgentResult("Работа прервана. Достигнут лимит шагов.", tool_steps, get_all_sources(tool_steps))
