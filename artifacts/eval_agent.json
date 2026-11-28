@@ -3,7 +3,7 @@
     "mode": "agent",
     "model": "qwen3:4b-instruct-2507-q4_K_M",
     "questions": 24,
-    "accuracy": 0.917,
+    "accuracy": 0.958,
     "by_type": {
       "local": {
         "questions": 5,
@@ -19,14 +19,14 @@
       },
       "tool": {
         "questions": 5,
-        "accuracy": 0.8
+        "accuracy": 1.0
       },
       "refusal": {
         "questions": 3,
         "accuracy": 0.667
       }
     },
-    "fabricated_rate": 0.0,
+    "fabricated_rate": 0.042,
     "source_recall": 1.0,
     "rejected_calls_rate": 0.034,
     "llm_calls_per_question": 4.958,
@@ -1642,10 +1642,12 @@
       "id": "dev-21",
       "type": "tool",
       "question": "Оформи заказ: 2 штуки детали для устранения ошибки E-20 на BZ-120, склад Москва.",
-      "answer": "Жду подтверждения.",
-      "correct": false,
+      "answer": "Подготовлен заказ на 2 шт. детали P-2054C для модели BZ-120, склад: Москва. Жду подтверждения.",
+      "correct": true,
       "refused": false,
-      "fabricated": [],
+      "fabricated": [
+        "2 шт"
+      ],
       "sources": [
         "bulletin_SB-2025-04.md",
         "bulletin_SB-2025-08.md",

@@ -129,7 +129,13 @@ def run_agent(
                 # Если confirm - False, возвращаем ответ, требующий подтверждения создания заказа от пользователя
                 # (FR-9).
                 if tool_call.name == "create_service_order" and not confirm:
-                    return AgentResult("Жду подтверждения.", tool_steps, get_all_sources(tool_steps), False, True,
+                    answer = (
+                        f"Подготовлен заказ на {tool_call.arguments['qty']} шт. детали "
+                        f"{tool_call.arguments['part_id']} для модели {tool_call.arguments['model']}, "
+                        f"склад: {tool_call.arguments['warehouse']}. "
+                        "Жду подтверждения."
+                    )
+                    return AgentResult(answer, tool_steps, get_all_sources(tool_steps), False, True,
                                        {"tool": "create_service_order", "args": tool_call.arguments})
 
                 # В случае возникновения ошибки ErpUnavailable повторяем еще 2 раза, иначе возвращаем ошибку, что данные
